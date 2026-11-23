@@ -1,0 +1,6 @@
+# Python 3.11+
+pyarrow>=15.0      # tested with 26.0.1
+numpy>=2.0         # needed by recent pyarrow versions
+
+# only to run the notebook
+ipykernel
