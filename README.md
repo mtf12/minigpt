@@ -1,6 +1,6 @@
-# miniGPT — Data Preparation
+# miniGPT — Data Preparation & Tokenizer
 
-> **🚧 Work in progress.** This project is under active development. The data preparation stage is complete;
+> **🚧 Work in progress.** This project is under active development. The data preparation and tokenizer stages are complete;
 > the next stages are still being built.
 >
 > - [x] Data preparation: cleaning, language balancing, train / val / test splits
@@ -9,7 +9,8 @@
 > - [ ] Training and evaluation (per language)
 
 A bilingual (Arabic + English) GPT built from scratch. This part prepares the training data:
-277,739 Wikipedia articles cleaned, balanced and split into a ~93M-token corpus, with every decision measured on the data.
+277,739 Wikipedia articles cleaned, balanced and split into a ~93M-token corpus, then a single 32k BPE tokenizer
+trained on both languages together. Every decision was measured on the data.
 
 ## Key findings & decisions
 
@@ -27,6 +28,17 @@ A bilingual (Arabic + English) GPT built from scratch. This part prepares the tr
   glued into one number. Now whole numbers are joined, and only on the same line.
 - **Built to scale.** Every stage streams the data in batches of 2,000 articles (peak memory ~780 MB for the full corpus),
   and every refactor was checked to produce row-for-row identical output.
+- **Picked the vocabulary size by measuring it.** Trained the tokenizer with 16k, 24k, 32k and 48k tokens and counted
+  how many tokens each one needs for the validation split. Going from 16k to 32k cut the Arabic tokens by 10.6% and the
+  English ones by 8.3%. After that the gain slows down: 48k saves only another 5.3% (Arabic) and 4.0% (English),
+  but makes the embedding and output layers 50% bigger, which is a bad deal for a small model. So the vocabulary is 32,000.
+- **One vocabulary that is fair to both languages.** Of the 32,000 tokens, 15,867 are Arabic and 15,023 English
+  (the rest are digits, punctuation and byte pieces). An Arabic token covers 3.8 characters on average and an English
+  one 4.0, so Arabic costs only ~6% more tokens for the same amount of text. Common words like ` عاصمة` and ` العربية`
+  are a single token.
+- **Byte-level, so no character is ever unknown.** Text is split into UTF-8 bytes before BPE, so tashkeel, rare letters
+  or anything else is encoded and decoded back exactly. New text (a prompt) goes through the same `normalize()`
+  as the training data first, so the model never gets forms it did not see in training (`محـــمد` instead of `محمد`).
 
 ## Results
 
@@ -38,6 +50,19 @@ A bilingual (Arabic + English) GPT built from scratch. This part prepares the tr
 | Train / val / test | 24,586 / 3,073 / 3,074 | 147,465 / 18,433 / 18,434 |
 
 No article appears in two splits, and each split keeps the same Arabic / English ratio.
+
+Tokenizer (32,000 tokens), measured on the validation split:
+
+| | Arabic | English |
+|---|---|---|
+| Tokens in the vocabulary | 15,867 | 15,023 |
+| Characters per token | 3.76 | 3.98 |
+| Validation tokens | 4,250,589 | 4,713,475 |
+
+| Vocabulary | 16k | 24k | 32k | 48k |
+|---|---|---|---|---|
+| Arabic validation tokens | 4,753,922 | 4,441,681 | **4,250,589** | 4,027,431 |
+| English validation tokens | 5,142,548 | 4,871,789 | **4,713,475** | 4,523,325 |
 
 ## Data source
 
@@ -62,38 +87,22 @@ Known limitations:
 ```bash
 pip install -r requirements.txt
 
-# everything, with the reports
+# data preparation: everything, with the reports
 python models/preprocessing/run_preprocessing.py
 
-# cleaning, balancing and splitting only
+# data preparation: cleaning, balancing and splitting only
 python models/preprocessing/run_preprocessing.py --skip-reports
-```
 
-Or open the [notebook](models/data_pipeline.ipynb) and run the cells in order.
-The raw data lives in `datasets/raw/ar.parquet` and `datasets/raw/en.parquet` and is never modified.
-
-## Tokenizer
-
-A joint Arabic + English byte-level BPE tokenizer (32,000 tokens), trained on the train split (needs `datasets/splits/`):
-
-```bash
-# train, then measure on the validation split
+# tokenizer: train, then measure on the validation split (needs datasets/splits/)
 python models/tokenizer/run_tokenizer.py
 
-# also compare 16k / 24k / 32k / 48k vocabularies (slow)
+# tokenizer: also compare 16k / 24k / 32k / 48k vocabularies (slow)
 python models/tokenizer/run_tokenizer.py --benchmark
 ```
 
-Or run cells 7 and 8 of the [notebook](models/data_pipeline.ipynb).
-
-| # | Stage | File | What it does |
-|---|---|---|---|
-| 7 | Training | [train_tokenizer.py](models/tokenizer/train_tokenizer.py) | Trains on every article as `title\n\ntext`; BOS and EOS are added when an article is encoded, PAD is only for batching. Saves `models/tokenizer/artifacts/tokenizer.json` |
-| 8 | Evaluation | [evaluate_tokenizer.py](models/tokenizer/evaluate_tokenizer.py) | Tokens per character for each language on the validation split; optional vocabulary-size comparison saved to `artifacts/vocab_benchmark.json` |
-| – | Using it | [encode_text.py](models/tokenizer/encode_text.py) | Encodes new text (a prompt, new data) after the same `normalize()` as the training data, then decodes back |
-
-Settings live in [tokenizer_config.py](models/tokenizer/tokenizer_config.py) (named so it never clashes with the preprocessing `config.py`).
-The tokenizer reuses `parquet_io` and `light_cleaning` from preprocessing.
+Or open the [notebook](models/data_pipeline.ipynb) and run the cells in order. The last cell encodes an Arabic and an
+English sentence and decodes them back, so you can see the tokenizer working.
+The raw data lives in `datasets/raw/ar.parquet` and `datasets/raw/en.parquet` and is never modified.
 
 ## Stages
 
@@ -106,9 +115,16 @@ The tokenizer reuses `parquet_io` and `light_cleaning` from preprocessing.
 | 4 | Quality report | [quality_report.py](models/preprocessing/quality_report.py) | Raw vs. cleaned: what was removed and why, leftover problems, before / after examples |
 | 5 | Balancing | [balance_languages.py](models/preprocessing/balance_languages.py) | If one language has more than 2% more tokens, random articles are removed from it |
 | 6 | Splitting | [split_data.py](models/preprocessing/split_data.py) | 80 / 10 / 10 per language, Arabic and English mixed in every split, written to `datasets/splits/` |
+| 7 | Tokenizer training | [train_tokenizer.py](models/tokenizer/train_tokenizer.py) | Byte-level BPE with 32,000 tokens, trained on the train split with every article as `title\n\ntext`. Saves `models/tokenizer/artifacts/tokenizer.json` |
+| 8 | Tokenizer evaluation | [evaluate_tokenizer.py](models/tokenizer/evaluate_tokenizer.py) | Tokens per character for each language on the validation split; optional comparison of vocabulary sizes saved to `artifacts/vocab_benchmark.json` |
+| 9 | Encode / decode | [encode_text.py](models/tokenizer/encode_text.py) | Encodes new text after the same `normalize()` as the training data and decodes it back; shows a live example |
 
 Shared files: [config.py](models/preprocessing/config.py) (paths and settings) and
 [parquet_io.py](models/preprocessing/parquet_io.py) (reading and writing Parquet in batches).
+The tokenizer has its own settings in [tokenizer_config.py](models/tokenizer/tokenizer_config.py)
+(named so it never clashes with `config.py`) and reuses `parquet_io` and `light_cleaning` from preprocessing.
+
+Every encoded article gets `<|bos|>` at the start and `<|eos|>` at the end. `<|pad|>` is only for batching.
 
 The split files have the columns `title`, `text` and `language`. Training reads only `title` and `text`
 (a list of `(title, text)` tuples); `language` is kept to evaluate each language separately.
