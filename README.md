@@ -4,7 +4,7 @@
 > the next stages are still being built.
 >
 > - [x] Data preparation: cleaning, language balancing, train / val / test splits
-> - [ ] Tokenizer (trained on Arabic + English together)
+> - [x] Tokenizer (trained on Arabic + English together)
 > - [ ] Model (GPT, from scratch)
 > - [ ] Training and evaluation (per language)
 
@@ -72,6 +72,29 @@ python models/preprocessing/run_preprocessing.py --skip-reports
 Or open the [notebook](models/data_pipeline.ipynb) and run the cells in order.
 The raw data lives in `datasets/raw/ar.parquet` and `datasets/raw/en.parquet` and is never modified.
 
+## Tokenizer
+
+A joint Arabic + English byte-level BPE tokenizer (32,000 tokens), trained on the train split (needs `datasets/splits/`):
+
+```bash
+# train, then measure on the validation split
+python models/tokenizer/run_tokenizer.py
+
+# also compare 16k / 24k / 32k / 48k vocabularies (slow)
+python models/tokenizer/run_tokenizer.py --benchmark
+```
+
+Or run cells 7 and 8 of the [notebook](models/data_pipeline.ipynb).
+
+| # | Stage | File | What it does |
+|---|---|---|---|
+| 7 | Training | [train_tokenizer.py](models/tokenizer/train_tokenizer.py) | Trains on every article as `title\n\ntext`; BOS and EOS are added when an article is encoded, PAD is only for batching. Saves `models/tokenizer/artifacts/tokenizer.json` |
+| 8 | Evaluation | [evaluate_tokenizer.py](models/tokenizer/evaluate_tokenizer.py) | Tokens per character for each language on the validation split; optional vocabulary-size comparison saved to `artifacts/vocab_benchmark.json` |
+| – | Using it | [encode_text.py](models/tokenizer/encode_text.py) | Encodes new text (a prompt, new data) after the same `normalize()` as the training data, then decodes back |
+
+Settings live in [tokenizer_config.py](models/tokenizer/tokenizer_config.py) (named so it never clashes with the preprocessing `config.py`).
+The tokenizer reuses `parquet_io` and `light_cleaning` from preprocessing.
+
 ## Stages
 
 | # | Stage | File | What it does |
@@ -96,6 +119,7 @@ Inside one language the articles keep their file order, so the training data loa
 ```bash
 python models/preprocessing/tests/test_cleaning.py           # 12 cleaning cases (6 Arabic, 6 English), printed before / after
 python models/preprocessing/tests/test_balance_and_split.py  # balancing and splitting on small fake data
+python models/tokenizer/tests/test_tokenizer.py              # round trip, normalization of new text, special tokens
 ```
 
-Both also run with `pytest`.
+All also run with `pytest`.

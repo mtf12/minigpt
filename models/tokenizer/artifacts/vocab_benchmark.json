@@ -1,0 +1,70 @@
+[
+  {
+    "vocab_size": 16000,
+    "languages": {
+      "ar": {
+        "articles": 3073,
+        "characters": 15976387,
+        "tokens": 4753922,
+        "tokens_per_character": 0.29755926668526494
+      },
+      "en": {
+        "articles": 18433,
+        "characters": 18780198,
+        "tokens": 5142548,
+        "tokens_per_character": 0.2738282099049222
+      }
+    }
+  },
+  {
+    "vocab_size": 24000,
+    "languages": {
+      "ar": {
+        "articles": 3073,
+        "characters": 15976387,
+        "tokens": 4441681,
+        "tokens_per_character": 0.2780153610450223
+      },
+      "en": {
+        "articles": 18433,
+        "characters": 18780198,
+        "tokens": 4871789,
+        "tokens_per_character": 0.25941094976740925
+      }
+    }
+  },
+  {
+    "vocab_size": 32000,
+    "languages": {
+      "ar": {
+        "articles": 3073,
+        "characters": 15976387,
+        "tokens": 4250589,
+        "tokens_per_character": 0.26605445899626745
+      },
+      "en": {
+        "articles": 18433,
+        "characters": 18780198,
+        "tokens": 4713475,
+        "tokens_per_character": 0.2509811131916714
+      }
+    }
+  },
+  {
+    "vocab_size": 48000,
+    "languages": {
+      "ar": {
+        "articles": 3073,
+        "characters": 15976387,
+        "tokens": 4027431,
+        "tokens_per_character": 0.25208646986330513
+      },
+      "en": {
+        "articles": 18433,
+        "characters": 18780198,
+        "tokens": 4523325,
+        "tokens_per_character": 0.2408560868208099
+      }
+    }
+  }
+]
