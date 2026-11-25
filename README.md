@@ -1,16 +1,16 @@
-# miniGPT — Data Preparation & Tokenizer
+# miniGPT — Data Preparation, Tokenizer, GPT Model & Training
 
-> **🚧 Work in progress.** This project is under active development. The data preparation and tokenizer stages are complete;
-> the next stages are still being built.
+> **🚧 Work in progress.** Data preparation, the tokenizer, the GPT model and its training pipeline are in place.
+> Full training and final test evaluation have not been run yet.
 >
 > - [x] Data preparation: cleaning, language balancing, train / val / test splits
 > - [x] Tokenizer (trained on Arabic + English together)
-> - [ ] Model (GPT, from scratch)
-> - [ ] Training and evaluation (per language)
+> - [x] Model (GPT, from scratch)
+> - [x] Training pipeline (train split, validation loss and checkpoints)
+> - [ ] Full training and final test evaluation (per language)
 
-A bilingual (Arabic + English) GPT built from scratch. This part prepares the training data:
-277,739 Wikipedia articles cleaned, balanced and split into a ~93M-token corpus, then a single 32k BPE tokenizer
-trained on both languages together. Every decision was measured on the data.
+A bilingual (Arabic + English) GPT built from scratch. The project prepares 277,739 Wikipedia articles into a
+~93M-token corpus, trains one shared 32k BPE tokenizer, and provides a training pipeline for the GPT model.
 
 ## Key findings & decisions
 
@@ -39,6 +39,22 @@ trained on both languages together. Every decision was measured on the data.
 - **Byte-level, so no character is ever unknown.** Text is split into UTF-8 bytes before BPE, so tashkeel, rare letters
   or anything else is encoded and decoded back exactly. New text (a prompt) goes through the same `normalize()`
   as the training data first, so the model never gets forms it did not see in training (`محـــمد` instead of `محمد`).
+- **Used pre-norm transformer blocks.** The 6-layer, 6-head model has a width of 384, a 256-token context and 0.1 dropout.
+  Each block normalizes before attention and the MLP, while both residual paths remain direct.
+- **Sized the model for an 8 GB laptop and a free Colab GPU.** 6 layers, 6 heads, width 384 and a 256-token context
+  give 23,033,856 parameters. One forward and backward pass on 16 windows uses 4.4 GB on an 8 GB M1, and 3 epochs over
+  the 71.6M train tokens show the model ~215M tokens (~9 per parameter).
+- **Tied the input and output token weights.** The 32,000 × 384 token matrix is shared, saving 12,288,000 parameters.
+  The measured model has 23,033,856 parameters total: 10,647,552 outside embeddings and 12,386,304 in token and position embeddings.
+- **Trained by epochs, on the train split only.** Each epoch shuffles the 279,757 windows of 256 tokens and visits
+  each one once, then measures loss, accuracy and perplexity on validation. One update is 512 windows (~131k tokens),
+  added up from 32 micro-batches of 16, so an epoch is 547 updates. AdamW warms up over 100 updates to 3e-4, then
+  goes down to 3e-5 with a cosine. The test split is never read during training.
+- **Training can stop and resume, on Colab too.** The last checkpoint (weights, optimizer and the position inside the
+  epoch) is saved every 15 minutes and after every epoch, through a temporary file so a dropped session never leaves
+  a broken one. On Colab the checkpoints live on Google Drive, so a new session continues at the exact next update.
+  A test checks that a resumed run ends with the same weights as a run that never stopped. On CUDA the model trains
+  in float16 mixed precision.
 
 ## Results
 
@@ -50,6 +66,14 @@ trained on both languages together. Every decision was measured on the data.
 | Train / val / test | 24,586 / 3,073 / 3,074 | 147,465 / 18,433 / 18,434 |
 
 No article appears in two splits, and each split keeps the same Arabic / English ratio.
+
+GPT model (before training):
+
+| Configuration | Total parameters | Non-embedding | Embeddings |
+|---|---:|---:|---:|
+| 6 layers, 6 heads, width 384, context 256 | 23,033,856 | 10,647,552 | 12,386,304 |
+
+An untrained forward pass on a two-article validation batch ran on MPS with loss 10.4609.
 
 Tokenizer (32,000 tokens), measured on the validation split:
 
@@ -98,11 +122,36 @@ python models/tokenizer/run_tokenizer.py
 
 # tokenizer: also compare 16k / 24k / 32k / 48k vocabularies (slow)
 python models/tokenizer/run_tokenizer.py --benchmark
+
+# GPT model: run a validation forward pass and short Arabic / English generations
+python models/gpt/run_gpt.py
+
+# training: cache train / validation tokens, then train and save checkpoints
+python models/training/run_training.py
+
+# run one epoch as a shorter check
+python models/training/run_training.py --epochs 1
+
+# resume training from the latest checkpoint
+python models/training/run_training.py --resume
 ```
 
-Or open the [notebook](models/data_pipeline.ipynb) and run the cells in order. The last cell encodes an Arabic and an
-English sentence and decodes them back, so you can see the tokenizer working.
+To train on Google Colab (GPU runtime), upload `datasets/splits/train.parquet` and `datasets/splits/val.parquet`
+once to `My Drive/miniGPT/splits/`, then run these lines in a Colab cell:
+
+```
+!git clone https://github.com/mtf12/minigpt.git
+%cd minigpt
+!pip install -q -r requirements.txt
+!python models/training/colab_runner.py
+```
+
+The runner copies the splits from Drive, saves the checkpoints to `My Drive/miniGPT/checkpoints/`, and resumes from
+them automatically when the session drops and you run the same cells again.
+
+Or open the [notebook](models/data_pipeline.ipynb) and run the cells in order. The last two cells run the GPT model and training.
 The raw data lives in `datasets/raw/ar.parquet` and `datasets/raw/en.parquet` and is never modified.
+Set `MINIGPT_ARTIFACTS_DIR` to move token caches, or `MINIGPT_CHECKPOINTS_DIR` to move checkpoints independently.
 
 ## Stages
 
@@ -118,6 +167,8 @@ The raw data lives in `datasets/raw/ar.parquet` and `datasets/raw/en.parquet` an
 | 7 | Tokenizer training | [train_tokenizer.py](models/tokenizer/train_tokenizer.py) | Byte-level BPE with 32,000 tokens, trained on the train split with every article as `title\n\ntext`. Saves `models/tokenizer/artifacts/tokenizer.json` |
 | 8 | Tokenizer evaluation | [evaluate_tokenizer.py](models/tokenizer/evaluate_tokenizer.py) | Tokens per character for each language on the validation split; optional comparison of vocabulary sizes saved to `artifacts/vocab_benchmark.json` |
 | 9 | Encode / decode | [encode_text.py](models/tokenizer/encode_text.py) | Encodes new text after the same `normalize()` as the training data and decodes it back; shows a live example |
+| 10 | GPT model | [gpt_model.py](models/gpt/gpt_model.py) | Decoder-only pre-norm GPT with causal attention, tied token embeddings and temperature / top-k generation |
+| 11 | GPT training | [train_model.py](models/training/train_model.py) | Caches token ids, shuffles and visits every train window once per epoch, AdamW with warmup and cosine learning rate, validation after every epoch, checkpoints every 15 minutes and after every epoch |
 
 Shared files: [config.py](models/preprocessing/config.py) (paths and settings) and
 [parquet_io.py](models/preprocessing/parquet_io.py) (reading and writing Parquet in batches).
@@ -126,9 +177,10 @@ The tokenizer has its own settings in [tokenizer_config.py](models/tokenizer/tok
 
 Every encoded article gets `<|bos|>` at the start and `<|eos|>` at the end. `<|pad|>` is only for batching.
 
-The split files have the columns `title`, `text` and `language`. Training reads only `title` and `text`
-(a list of `(title, text)` tuples); `language` is kept to evaluate each language separately.
-Inside one language the articles keep their file order, so the training data loader shuffles them again.
+The split files have the columns `title`, `text` and `language`. Training encodes `title\n\ntext` from the train
+split into a compact cache, then shuffles and visits each 256-token window once per epoch. Validation uses its own
+cache and is evaluated without gradients at each epoch's end. The `language` column remains available for later
+per-language evaluation. The test split is not read.
 
 ## Tests
 
@@ -136,6 +188,8 @@ Inside one language the articles keep their file order, so the training data loa
 python models/preprocessing/tests/test_cleaning.py           # 12 cleaning cases (6 Arabic, 6 English), printed before / after
 python models/preprocessing/tests/test_balance_and_split.py  # balancing and splitting on small fake data
 python models/tokenizer/tests/test_tokenizer.py              # round trip, normalization of new text, special tokens
+python models/gpt/tests/test_gpt.py                          # shapes, loss, causality, padding, tying and CPU overfit
+python models/training/tests/test_training.py                # token cache, windows, accumulation, learning rate, exact resume
 ```
 
 All also run with `pytest`.

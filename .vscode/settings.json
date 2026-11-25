@@ -1,6 +1,8 @@
 {
     "python.analysis.extraPaths": [
         "./models/preprocessing",
-        "./models/tokenizer"
+        "./models/tokenizer",
+        "./models/gpt",
+        "./models/training"
     ]
 }
