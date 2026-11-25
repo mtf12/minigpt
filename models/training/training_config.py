@@ -24,6 +24,7 @@ TRAIN_TOKENS_PATH = ARTIFACTS_DIR / "train_tokens.u16"
 VAL_TOKENS_PATH = ARTIFACTS_DIR / "val_tokens.u16"
 LAST_CHECKPOINT_PATH = CHECKPOINTS_DIR / "last_checkpoint.pt"  # where training resumes from
 BEST_MODEL_PATH = CHECKPOINTS_DIR / "best_model.pt"  # the epoch with the lowest validation loss
+HISTORY_PATH = CHECKPOINTS_DIR / "history.json"  # train / validation loss of the whole run, kept across resumes
 
 # Data
 CONTEXT_LENGTH = gpt_config.CONTEXT_LENGTH  # every training window fills the whole model context
@@ -43,3 +44,6 @@ BETA2 = 0.95  # lower than the default 0.999 so Adam reacts faster to loss spike
 GRAD_CLIP = 1.0  # gradients longer than this are shrunk, so one bad batch cannot blow up the weights
 SEED = 42
 CHECKPOINT_MINUTES = 15  # a dropped Colab session loses at most this much training
+
+# After training
+SAMPLE_TOKENS = 60  # tokens generated per prompt: about one or two sentences

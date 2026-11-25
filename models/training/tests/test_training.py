@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import sys
 import tempfile
 from unittest.mock import patch
@@ -28,6 +29,7 @@ def use_tiny_settings(folder):
     config.CHECKPOINT_MINUTES = 0  # save the last checkpoint after every update
     config.LAST_CHECKPOINT_PATH = folder / "last_checkpoint.pt"
     config.BEST_MODEL_PATH = folder / "best_model.pt"
+    config.HISTORY_PATH = folder / "history.json"
 
 
 # A new run with a tiny GPT; the same seed always gives the same starting weights.
@@ -110,6 +112,10 @@ def run_checks():
               f"validation loss {history[0]['validation']['loss']:.3f} -> {history[1]['validation']['loss']:.3f}")
         check("[fit] the last checkpoint and the best model are saved",
               config.LAST_CHECKPOINT_PATH.exists() and config.BEST_MODEL_PATH.exists())
+        straight_history = json.loads(config.HISTORY_PATH.read_text())
+        check("[fit] history.json has the loss of every update and every epoch",
+              [u["step"] for u in straight_history["updates"]] == list(range(1, 9)) and len(straight_history["epochs"]) == 2,
+              f"{len(straight_history['updates'])} updates, {len(straight_history['epochs'])} epochs")
 
         # a session that drops after 5 updates (in the middle of epoch 2), then resumes from the last checkpoint
         dropped = tiny_run()
@@ -136,8 +142,24 @@ def run_checks():
         check("[resume] resuming ends with the same weights as training without a stop",
               same_weights(straight["model"], resumed["model"]))
         check("[resume] and with the same metrics",
-              abs(straight["progress"]["history"][-1]["train"]["loss"]
-                  - resumed["progress"]["history"][-1]["train"]["loss"]) < 1e-6)
+              abs(straight["progress"]["history"]["epochs"][-1]["train"]["loss"]
+                  - resumed["progress"]["history"]["epochs"][-1]["train"]["loss"]) < 1e-6)
+        resumed_history = json.loads(config.HISTORY_PATH.read_text())
+        check("[resume] history.json keeps every update once, with no gap or repeat after the resume",
+              [u["step"] for u in resumed_history["updates"]] == list(range(1, 9))
+              and all(abs(a["loss"] - b["loss"]) < 1e-6 for a, b in zip(straight_history["updates"], resumed_history["updates"])))
+
+        # the same checkpoint with a tokenizer.json that changed in between
+        real_tokenizer = config.TOKENIZER_PATH
+        config.TOKENIZER_PATH = folder / "changed_tokenizer.json"
+        config.TOKENIZER_PATH.write_text(real_tokenizer.read_text(encoding="utf-8") + " ", encoding="utf-8")
+        try:
+            train_model.load_checkpoint(config.LAST_CHECKPOINT_PATH, tiny_run())
+            refused = False
+        except SystemExit:
+            refused = True
+        config.TOKENIZER_PATH = real_tokenizer
+        check("[resume] a checkpoint refuses to continue with a different tokenizer", refused)
 
     print(f"\n{'all checks passed' if failures == 0 else f'{failures} check(s) failed'}")
     return failures

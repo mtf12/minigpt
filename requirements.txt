@@ -4,6 +4,7 @@ numpy>=2.0         # needed by recent pyarrow versions
 tokenizers>=0.21,<1.0  # Hugging Face BPE tokenizer
 torch>=2.4,<3.0       # GPT model, CUDA AMP and Apple MPS support
 tqdm>=4.66            # training progress bars
+matplotlib>=3.7       # loss curves in the notebook
 
 # only to run the notebook
 ipykernel

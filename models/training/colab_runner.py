@@ -1,6 +1,9 @@
-# Train on Google Colab: copy the splits from Google Drive, keep the checkpoints on Drive, and resume if one is there.
-# Upload datasets/splits/train.parquet and val.parquet to "My Drive/miniGPT/splits/" once, then in Colab:
+# Google Colab: mount Google Drive, copy the data from it, and keep the checkpoints and the training history on it.
+# The notebook's Setup cell calls setup(). To only train, without the notebook, run in a Colab cell:
 #   !python models/training/colab_runner.py
+# Upload these once to "My Drive/miniGPT/":
+#   raw/ar.parquet, raw/en.parquet        (from datasets/raw/, used by the notebook stages 1-6)
+#   splits/train.parquet, splits/val.parquet  (from datasets/splits/, used by the tokenizer and the training)
 from pathlib import Path
 import os
 import shutil
@@ -11,36 +14,39 @@ from google.colab import drive
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DRIVE_DIR = Path("/content/drive/MyDrive/miniGPT")
-DRIVE_SPLITS_DIR = DRIVE_DIR / "splits"            # uploaded once by hand
-DRIVE_CHECKPOINTS_DIR = DRIVE_DIR / "checkpoints"  # survives when the Colab session drops
 LOCAL_ARTIFACTS_DIR = Path("/content/miniGPT_artifacts")  # token caches on Colab's fast local disk, rebuilt each session
-SPLITS = ["train.parquet", "val.parquet"]  # the test split is not used in training
+FROM_DRIVE = {
+    "raw": ["ar.parquet", "en.parquet"],
+    "splits": ["train.parquet", "val.parquet"],  # the test split is not used
+}
 
 
-# Copy the splits the training reads from Drive into datasets/splits/, and stop if one is missing on Drive.
-def copy_splits():
-    splits_dir = PROJECT_ROOT / "datasets" / "splits"
-    splits_dir.mkdir(parents=True, exist_ok=True)
-    for name in SPLITS:
-        source = DRIVE_SPLITS_DIR / name
-        if not source.exists():
-            sys.exit(f"{source} is missing: upload datasets/splits/{name} to My Drive/miniGPT/splits/ first.")
-        shutil.copy2(source, splits_dir / name)
-        print(f"copied {name} ({source.stat().st_size / 1e6:.0f} MB)")
+# Copy the data files from Drive into datasets/, and stop if one is missing on Drive.
+def copy_data():
+    for folder, names in FROM_DRIVE.items():
+        (PROJECT_ROOT / "datasets" / folder).mkdir(parents=True, exist_ok=True)
+        for name in names:
+            source = DRIVE_DIR / folder / name
+            if not source.exists():
+                sys.exit(f"{source} is missing: upload datasets/{folder}/{name} to My Drive/miniGPT/{folder}/ first.")
+            shutil.copy2(source, PROJECT_ROOT / "datasets" / folder / name)
+            print(f"  copied {folder}/{name} ({source.stat().st_size / 1e6:.0f} MB)")
 
 
-# Mount Drive, copy the splits, point the checkpoints to Drive, then start or resume the training.
-def main():
+# Mount Drive in this kernel, copy the data, and send checkpoints and history to Drive (before training is imported).
+def setup():
+    print("\n### Colab setup")
     drive.mount("/content/drive")
-    copy_splits()
+    copy_data()
     os.environ["MINIGPT_ARTIFACTS_DIR"] = str(LOCAL_ARTIFACTS_DIR)
-    os.environ["MINIGPT_CHECKPOINTS_DIR"] = str(DRIVE_CHECKPOINTS_DIR)
+    os.environ["MINIGPT_CHECKPOINTS_DIR"] = str(DRIVE_DIR / "checkpoints")
+    print(f"  checkpoints and history.json go to {DRIVE_DIR / 'checkpoints'}")
 
-    command = [sys.executable, str(PROJECT_ROOT / "models" / "training" / "run_training.py")]
-    if (DRIVE_CHECKPOINTS_DIR / "last_checkpoint.pt").exists():
-        command.append("--resume")
-    else:
-        print("no checkpoint on Drive yet: starting a new training run")
+
+# Train without the notebook: set up, then start, or continue the checkpoint on Drive if there is one.
+def main():
+    setup()
+    command = [sys.executable, str(PROJECT_ROOT / "models" / "training" / "run_training.py"), "--resume"]
     subprocess.run(command, cwd=PROJECT_ROOT, check=True)
 
 

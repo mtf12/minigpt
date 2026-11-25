@@ -1,6 +1,9 @@
 # Train the GPT on the train split epoch by epoch, check the validation loss after every epoch, and save checkpoints.
 # The last checkpoint is saved every CHECKPOINT_MINUTES and after every epoch, so a dropped session can resume.
+import hashlib
+import json
 import math
+import sys
 import time
 
 import numpy as np
@@ -34,9 +37,7 @@ def build_token_cache(split_path, cache_path, tokenizer):
             np.array(buffer, dtype=np.uint16).tofile(f)
         temp_path.replace(cache_path)
 
-    tokens = np.memmap(cache_path, dtype=np.uint16, mode="r")  # read from disk, never fully in memory
-    print(f"{cache_path.name}: {len(tokens):,} tokens")
-    return tokens
+    return np.memmap(cache_path, dtype=np.uint16, mode="r")  # read from disk, never fully in memory
 
 
 # Number of context windows in a token stream; the last one can be shorter (it gets padded).
@@ -143,6 +144,11 @@ def evaluate(run, tokens):
 # The run and its checkpoints
 # ---------------------------------------------------------------------------
 
+# Short fingerprint of tokenizer.json: a checkpoint must always continue with the tokenizer it was trained with.
+def tokenizer_fingerprint():
+    return hashlib.sha256(config.TOKENIZER_PATH.read_bytes()).hexdigest()[:16]
+
+
 # Everything a training run needs, and everything a checkpoint saves: model, optimizer, scaler and progress.
 def new_run(model, device):
     optimizer = torch.optim.AdamW(model.parameters(), lr=config.LEARNING_RATE, betas=(config.BETA1, config.BETA2),
@@ -152,7 +158,8 @@ def new_run(model, device):
         "epoch": 0, "step": 0, "global_step": 0,          # where training is
         "loss_sum": 0.0, "correct": 0, "targets": 0,      # sums of the current epoch, for the train metrics
         "best_val_loss": float("inf"), "best_epoch": 0,
-        "history": [],                                    # train and validation metrics of every finished epoch
+        "history": {"updates": [], "epochs": []},        # train loss of every update, metrics of every epoch
+        "tokenizer": tokenizer_fingerprint(),
     }
     return {"model": model, "optimizer": optimizer, "scaler": scaler, "device": device, "progress": progress}
 
@@ -171,16 +178,26 @@ def save_checkpoint(path, run):
     temp_path.replace(path)
 
 
+# Save the last checkpoint and write the history next to it (history.json is what the loss curve is drawn from).
+# Both always describe the same update, so after a resume the history continues without gaps or repeats.
+def save_progress(run):
+    save_checkpoint(config.LAST_CHECKPOINT_PATH, run)
+    config.HISTORY_PATH.write_text(json.dumps(run["progress"]["history"], indent=1) + "\n", encoding="utf-8")
+
+
 # Load a checkpoint into a run, so training continues at the exact next update.
 def load_checkpoint(path, run):
     checkpoint = torch.load(path, map_location=run["device"], weights_only=True)
+    if checkpoint["progress"]["tokenizer"] != tokenizer_fingerprint():
+        sys.exit(f"{path.name} was trained with another tokenizer.json. Run the notebook from the top "
+                 "(stages 1-7 rebuild the same splits and tokenizer) before resuming.")
     run["model"].load_state_dict(checkpoint["model"])
     run["optimizer"].load_state_dict(checkpoint["optimizer"])
     if run["scaler"].is_enabled() and checkpoint["scaler"]:  # the scaler is only used (and saved) on CUDA
         run["scaler"].load_state_dict(checkpoint["scaler"])
     run["progress"] = checkpoint["progress"]
     torch.set_rng_state(checkpoint["rng"].cpu())
-    print(f"resumed from {path}: epoch {run['progress']['epoch'] + 1}, update {run['progress']['step']:,}")
+    print(f"  {'resumed from:':<15}{path.name}, epoch {run['progress']['epoch'] + 1}, update {run['progress']['step']:,}")
 
 
 # ---------------------------------------------------------------------------
@@ -203,26 +220,28 @@ def train_epoch(run, tokens, total_steps):
                initial=progress["step"], total=steps)
     for step in bar:
         windows = order[step * config.BATCH_SIZE : (step + 1) * config.BATCH_SIZE]
-        loss_sum, correct, count = train_step(run, tokens, windows, learning_rate(progress["global_step"], total_steps))
+        lr = learning_rate(progress["global_step"], total_steps)
+        loss_sum, correct, count = train_step(run, tokens, windows, lr)
         progress["loss_sum"] += loss_sum
         progress["correct"] += correct
         progress["targets"] += count
         progress["step"] = step + 1
         progress["global_step"] += 1
+        progress["history"]["updates"].append({"step": progress["global_step"], "loss": loss_sum / count, "lr": lr})
         bar.set_postfix(loss=f"{loss_sum / count:.4f}")
 
         if time.time() - last_save >= config.CHECKPOINT_MINUTES * 60:
-            save_checkpoint(config.LAST_CHECKPOINT_PATH, run)
+            save_progress(run)
             last_save = time.time()
 
 
 # Print the train and validation metrics of one epoch.
 def print_epoch(entry):
-    print(f"\nepoch {entry['epoch']}/{config.EPOCHS}")
+    title = f"Epoch {entry['epoch']}/{config.EPOCHS}"
+    print(f"\n  {title:<12}{'loss':>12}{'accuracy':>12}{'perplexity':>13}")
     for name in ["train", "validation"]:
         metrics = entry[name]
-        print(f"{name:<10}  loss {metrics['loss']:.4f} | accuracy {metrics['accuracy']:.2%} | "
-              f"perplexity {metrics['perplexity']:.2f}")
+        print(f"  {name:<12}{metrics['loss']:>12.4f}{metrics['accuracy']:>12.2%}{metrics['perplexity']:>13.2f}")
 
 
 # Train until EPOCHS from wherever the run is. After each epoch: validation, best model, last checkpoint.
@@ -233,23 +252,25 @@ def fit(run, train_tokens, val_tokens):
         train_epoch(run, train_tokens, total_steps)
         entry = {
             "epoch": progress["epoch"] + 1,
+            "step": progress["global_step"],
             "train": summarize(progress["loss_sum"], progress["correct"], progress["targets"]),
             "validation": evaluate(run, val_tokens),
         }
         print_epoch(entry)
-        progress["history"].append(entry)
+        progress["history"]["epochs"].append(entry)
         progress.update(epoch=progress["epoch"] + 1, step=0, loss_sum=0.0, correct=0, targets=0)
 
         if entry["validation"]["loss"] < progress["best_val_loss"]:
             progress["best_val_loss"] = entry["validation"]["loss"]
             progress["best_epoch"] = entry["epoch"]
             save_checkpoint(config.BEST_MODEL_PATH, run)
-        save_checkpoint(config.LAST_CHECKPOINT_PATH, run)
-    return progress["history"]
+        save_progress(run)
+    return progress["history"]["epochs"]
 
 
-# Build the token caches, then start a new run (or resume the last checkpoint) and train it.
+# Build the token caches, then start a new run (or, with resume, continue the last checkpoint if there is one).
 def run_training(resume=False):
+    print("\n### 11) Training the GPT")
     torch.manual_seed(config.SEED)
     device = gpt_model.select_device()
     tokenizer = encode_text.load_tokenizer()
@@ -257,13 +278,15 @@ def run_training(resume=False):
     val_tokens = build_token_cache(config.VAL_PATH, config.VAL_TOKENS_PATH, tokenizer)
 
     run = new_run(gpt_model.GPTModel().to(device), device)
-    if resume:
+    if resume and config.LAST_CHECKPOINT_PATH.exists():
         load_checkpoint(config.LAST_CHECKPOINT_PATH, run)
 
     steps = steps_per_epoch(train_tokens)
-    print(f"device: {device} | checkpoints: {config.CHECKPOINTS_DIR}")
-    print(f"{config.EPOCHS} epochs x {steps:,} updates of {config.BATCH_SIZE} windows "
+    print(f"  {'device:':<15}{device}")
+    print(f"  {'tokens:':<15}{len(train_tokens):,} train | {len(val_tokens):,} validation")
+    print(f"  {'schedule:':<15}{config.EPOCHS} epochs x {steps:,} updates of {config.BATCH_SIZE} windows "
           f"({config.BATCH_SIZE // config.MICRO_BATCH_SIZE} micro-batches of {config.MICRO_BATCH_SIZE})")
+    print(f"  {'checkpoints:':<15}{config.CHECKPOINTS_DIR}\n")
     history = fit(run, train_tokens, val_tokens)
-    print(f"\nbest validation loss: {run['progress']['best_val_loss']:.4f} at epoch {run['progress']['best_epoch']}")
+    print(f"\n  best validation loss: {run['progress']['best_val_loss']:.4f} at epoch {run['progress']['best_epoch']}")
     return history
