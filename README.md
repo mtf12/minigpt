@@ -53,8 +53,10 @@ A bilingual (Arabic + English) GPT built from scratch. The project prepares 277,
 - **Training can stop and resume, on Colab too.** The last checkpoint (weights, optimizer and the position inside the
   epoch) is saved every 15 minutes and after every epoch, through a temporary file so a dropped session never leaves
   a broken one. On Colab the checkpoints live on Google Drive, so a new session continues at the exact next update.
-  A test checks that a resumed run ends with the same weights as a run that never stopped. On CUDA the model trains
-  in float16 mixed precision.
+  A test checks that a resumed run ends with the same weights as a run that never stopped. The checkpoint also keeps
+  the loss of every update in `history.json`, so the loss curve covers the whole run across sessions, and it refuses
+  to resume with a different `tokenizer.json` than the one it was trained with. On CUDA the model trains in float16
+  mixed precision.
 
 ## Results
 
@@ -136,22 +138,33 @@ python models/training/run_training.py --epochs 1
 python models/training/run_training.py --resume
 ```
 
-To train on Google Colab (GPU runtime), upload `datasets/splits/train.parquet` and `datasets/splits/val.parquet`
-once to `My Drive/miniGPT/splits/`, then run these lines in a Colab cell:
+Or open the [notebook](models/data_pipeline.ipynb) and run the cells in order, locally or on Google Colab.
+
+The raw data lives in `datasets/raw/ar.parquet` and `datasets/raw/en.parquet` and is never modified.
+Set `MINIGPT_ARTIFACTS_DIR` to move token caches, or `MINIGPT_CHECKPOINTS_DIR` to move checkpoints independently.
+
+### On Google Colab
+
+Upload these files once to Google Drive, keeping the folder names:
+
+| Drive | From the project | Size | Used by |
+|---|---|---|---|
+| `My Drive/miniGPT/raw/ar.parquet`, `en.parquet` | `datasets/raw/` | 97 + 107 MB | notebook stages 1-6 |
+| `My Drive/miniGPT/splits/train.parquet`, `val.parquet` | `datasets/splits/` | 148 + 19 MB | training without re-running stages 1-6 |
+
+Then open the notebook on Colab (File > Open notebook > GitHub, `mtf12/minigpt`, `models/data_pipeline.ipynb`),
+choose a GPU runtime and run all cells. The Setup cell clones the repository, installs the requirements, mounts Drive
+and copies the data. Checkpoints and `history.json` are saved to `My Drive/miniGPT/checkpoints/`.
+If the session drops, run the Setup cell and then the training cell again: training continues from the last checkpoint.
+
+To only train, without the notebook, run in a Colab cell:
 
 ```
-!git clone https://github.com/mtf12/minigpt.git
+!GIT_LFS_SKIP_SMUDGE=1 git clone https://github.com/mtf12/minigpt.git
 %cd minigpt
 !pip install -q -r requirements.txt
 !python models/training/colab_runner.py
 ```
-
-The runner copies the splits from Drive, saves the checkpoints to `My Drive/miniGPT/checkpoints/`, and resumes from
-them automatically when the session drops and you run the same cells again.
-
-Or open the [notebook](models/data_pipeline.ipynb) and run the cells in order. The last two cells run the GPT model and training.
-The raw data lives in `datasets/raw/ar.parquet` and `datasets/raw/en.parquet` and is never modified.
-Set `MINIGPT_ARTIFACTS_DIR` to move token caches, or `MINIGPT_CHECKPOINTS_DIR` to move checkpoints independently.
 
 ## Stages
 
@@ -168,7 +181,9 @@ Set `MINIGPT_ARTIFACTS_DIR` to move token caches, or `MINIGPT_CHECKPOINTS_DIR` t
 | 8 | Tokenizer evaluation | [evaluate_tokenizer.py](models/tokenizer/evaluate_tokenizer.py) | Tokens per character for each language on the validation split; optional comparison of vocabulary sizes saved to `artifacts/vocab_benchmark.json` |
 | 9 | Encode / decode | [encode_text.py](models/tokenizer/encode_text.py) | Encodes new text after the same `normalize()` as the training data and decodes it back; shows a live example |
 | 10 | GPT model | [gpt_model.py](models/gpt/gpt_model.py) | Decoder-only pre-norm GPT with causal attention, tied token embeddings and temperature / top-k generation |
-| 11 | GPT training | [train_model.py](models/training/train_model.py) | Caches token ids, shuffles and visits every train window once per epoch, AdamW with warmup and cosine learning rate, validation after every epoch, checkpoints every 15 minutes and after every epoch |
+| 11 | GPT training | [train_model.py](models/training/train_model.py) | Caches token ids, shuffles and visits every train window once per epoch, AdamW with warmup and cosine learning rate, validation after every epoch, checkpoints and `history.json` every 15 minutes and after every epoch |
+| 12 | Loss curves | [training_report.py](models/training/training_report.py) | Train loss of every update and validation loss of every epoch, drawn from `history.json` |
+| 13 | Samples | [training_report.py](models/training/training_report.py) | Loads the best model (lowest validation loss) and continues Arabic and English prompts |
 
 Shared files: [config.py](models/preprocessing/config.py) (paths and settings) and
 [parquet_io.py](models/preprocessing/parquet_io.py) (reading and writing Parquet in batches).
@@ -189,7 +204,7 @@ python models/preprocessing/tests/test_cleaning.py           # 12 cleaning cases
 python models/preprocessing/tests/test_balance_and_split.py  # balancing and splitting on small fake data
 python models/tokenizer/tests/test_tokenizer.py              # round trip, normalization of new text, special tokens
 python models/gpt/tests/test_gpt.py                          # shapes, loss, causality, padding, tying and CPU overfit
-python models/training/tests/test_training.py                # token cache, windows, accumulation, learning rate, exact resume
+python models/training/tests/test_training.py                # token cache, windows, accumulation, learning rate, exact resume, history
 ```
 
 All also run with `pytest`.
