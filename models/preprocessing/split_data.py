@@ -27,7 +27,6 @@ def run():
         readers[lang] = parquet_io.read_rows(path, columns=["title", "text"])
         left[lang] = n
         quota[lang] = {"train": n_train, "val": n_val, "test": n - n_train - n_val}
-        print(f"{lang}: train {n_train:,}, val {n_val:,}, test {n - n_train - n_val:,}")
 
     writers = {name: parquet_io.open_writer(config.SPLITS_DIR / f"{name}.parquet", ["title", "text", "language"])
                for name in names}
@@ -43,6 +42,7 @@ def run():
 
         buffers[name].append({"title": row["title"] or "", "text": row["text"], "language": lang})
         counts[name] += 1
+        counts[lang, name] += 1
         if len(buffers[name]) >= config.BATCH_SIZE:
             parquet_io.write_batch(writers[name], buffers[name])
             buffers[name] = []
@@ -50,4 +50,10 @@ def run():
     for name in names:
         parquet_io.write_batch(writers[name], buffers[name])
         writers[name].close()
-        print(f"{name}: {counts[name]:,} articles")
+
+    # table of articles per language and split
+    print("\n### 6) Splitting into train / val / test")
+    print(" " * 11 + "".join(f"{name:>10}" for name in names))
+    for lang in config.LANGUAGES:
+        print(f"  {config.LANGUAGE_NAMES[lang]:<9}" + "".join(f"{counts[lang, name]:>10,}" for name in names))
+    print(f"  {'total':<9}" + "".join(f"{counts[name]:>10,}" for name in names))

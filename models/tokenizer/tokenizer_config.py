@@ -18,6 +18,7 @@ if str(PREPROCESSING_DIR) not in sys.path:
     sys.path.append(str(PREPROCESSING_DIR))
 
 LANGUAGES = ["ar", "en"]
+LANGUAGE_NAMES = {"ar": "Arabic", "en": "English"}  # used in printed reports
 
 # BPE
 VOCAB_SIZE = 32_000

@@ -8,6 +8,7 @@ import data_exploration
 
 # Compare raw with cleaned: what was removed and why, size, leftover problems, before/after examples.
 def run(stats):
+    print("\n### 4) Quality report: raw vs cleaned")
     for lang in config.LANGUAGES:
         raw_path = config.RAW_DIR / f"{lang}.parquet"
         clean_path = config.CLEANED_DIR / f"{lang}.parquet"
@@ -30,16 +31,17 @@ def run(stats):
                 originals[row["id"]] = row["text"]
 
         s = stats[lang]
-        print(f"\n===== {lang}: raw vs cleaned =====")
-        print(f"articles: {s['raw']:,} -> {s['cleaned']:,} ({s['cleaned'] / s['raw']:.1%} kept)")
-        for reason in ["too short before cleaning", "too short after basic cleaning",
-                       "too short after structural cleaning", "duplicates"]:
-            print(f"  removed, {reason}: {s.get(reason, 0):,}")
-        print(f"size: {raw_size / 1e6:.1f} MB -> {clean_size / 1e6:.1f} MB "
-              f"({(clean_size - raw_size) / raw_size:+.1%})")
-        print("problems left: " + (", ".join(f"{p} ({c})" for p, c in problems.items()) or "none"))
+        reasons = ["too short before cleaning", "too short after basic cleaning",
+                   "too short after structural cleaning", "duplicates"]
+        print(f"\n{config.LANGUAGE_NAMES[lang]}")
+        data_exploration.print_row("articles", f"{s['raw']:,} -> {s['cleaned']:,} ({s['cleaned'] / s['raw']:.1%} kept)")
+        data_exploration.print_list("removed", (f"{s.get(reason, 0):>7,}  {reason}" for reason in reasons))
+        data_exploration.print_row("size", f"{raw_size / 1e6:.1f} MB -> {clean_size / 1e6:.1f} MB "
+                                           f"({(clean_size - raw_size) / raw_size:+.1%})")
+        data_exploration.print_list("problems left", (f"{count:>7,}  {name}" for name, count in problems.items()))
 
         for row in examples:
             before = originals[row["id"]]
-            print(f"\n--- {row['title']}: {len(before):,} -> {len(row['text']):,} characters")
-            print(f"BEFORE:\n{data_exploration.preview(before)}\n\nAFTER:\n{data_exploration.preview(row['text'])}")
+            print(f"\n  Example: {row['title']} ({len(before):,} -> {len(row['text']):,} characters)")
+            print(f"  before:\n{data_exploration.indent(data_exploration.preview(before))}")
+            print(f"  after:\n{data_exploration.indent(data_exploration.preview(row['text']))}")

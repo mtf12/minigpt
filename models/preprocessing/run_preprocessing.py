@@ -17,23 +17,12 @@ def main():
     args = parser.parse_args()
 
     if not args.skip_reports:
-        print("\n### 1) Exploration report")
         data_exploration.explore("raw")
-
-    print("\n### 2) Light cleaning")
     light_stats = clean_dataset.run_light_cleaning()
-
-    print("\n### 3) Heavy cleaning")
     clean_stats = clean_dataset.run_heavy_cleaning(light_stats)
-
     if not args.skip_reports:
-        print("\n### 4) Quality report")
         quality_report.run(clean_stats)
-
-    print("\n### 5) Balancing the languages")
     balance_languages.run()
-
-    print("\n### 6) Splitting into train / val / test")
     split_data.run()
 
 

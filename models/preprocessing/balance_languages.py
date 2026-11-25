@@ -18,6 +18,7 @@ def estimate_tokens(path, lang):
 
 # Trim the bigger language (random articles) until both have about the same number of tokens.
 def run():
+    print("\n### 5) Balancing Arabic and English by tokens")
     paths = {lang: config.CLEANED_DIR / f"{lang}.parquet" for lang in config.LANGUAGES}
     tokens = {lang: estimate_tokens(path, lang) for lang, path in paths.items()}
     target = min(sum(t) for t in tokens.values())
@@ -46,4 +47,4 @@ def run():
             temp_path.replace(path)
             tokens[lang] = [tokens[lang][i] for i in sorted(keep)]
 
-        print(f"{lang}: {len(tokens[lang]):,} articles, ~{sum(tokens[lang]) / 1e6:.1f}M tokens")
+        print(f"  {config.LANGUAGE_NAMES[lang]:<9}{len(tokens[lang]):>9,} articles  ~{sum(tokens[lang]) / 1e6:.1f}M tokens")

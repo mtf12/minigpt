@@ -12,14 +12,9 @@ def main():
     parser.add_argument("--benchmark", action="store_true", help="also compare the vocabulary sizes in tokenizer_config")
     args = parser.parse_args()
 
-    print("\n### 7) Training the tokenizer")
     train_tokenizer.train()
-
-    print("\n### 8) Measuring it on the validation split")
     evaluate_tokenizer.evaluate_saved_tokenizer()
-
     if args.benchmark:
-        print("\n### Optional) Comparing vocabulary sizes")
         evaluate_tokenizer.run_benchmark()
 
 

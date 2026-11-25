@@ -40,6 +40,24 @@ def preview(text, head=600, tail=300):
     return text[:head] + "\n   [...]\n" + text[-tail:]
 
 
+# Indent every line of a text, so a long article stays inside its section when printed.
+def indent(text, spaces=4):
+    return "\n".join(" " * spaces + line for line in text.split("\n"))
+
+
+# Print one "label: value" line of a report, with the values of all lines lined up.
+def print_row(label, value):
+    print(f"  {label + ':':<18}{value}")
+
+
+# Print a list under one label: the first item next to the label, the others lined up under it.
+def print_list(label, items):
+    items = list(items) or ["none"]
+    print_row(label, items[0])
+    for item in items[1:]:
+        print(" " * 20 + item)
+
+
 # Pick `count` random row numbers of a file, without reading the file.
 def random_rows(path, count):
     total = pq.ParquetFile(path).metadata.num_rows
@@ -50,6 +68,7 @@ def random_rows(path, count):
 def explore(stage="raw"):
     folder = config.RAW_DIR if stage == "raw" else config.CLEANED_DIR
     tokens = {}
+    print(f"\n### 1) Exploration of the {stage} data")
     for lang in config.LANGUAGES:
         path = folder / f"{lang}.parquet"
         sample_rows = random_rows(path, 1)
@@ -69,18 +88,18 @@ def explore(stage="raw"):
         n = len(lengths)
         tokens[lang] = sum(lengths) / config.CHARS_PER_TOKEN[lang]
 
-        print(f"\n===== {lang} / {stage} =====")
-        print(f"articles: {n:,} | characters: {sum(lengths) / 1e6:.1f}M | size: {size / 1e6:.1f} MB")
-        print(f"length: median {lengths[n // 2]:,} | p10 {lengths[n // 10]:,} | "
-              f"p90 {lengths[n * 9 // 10]:,} | max {lengths[-1]:,}")
-        print(f"shorter than {config.MIN_CHARS} chars: {sum(x < config.MIN_CHARS for x in lengths):,}")
-        print("problems (articles):")
-        for name, count in problems.most_common() or [("none", 0)]:
-            print(f"  {name}: {count:,}")
-        print("most common short lines:")
-        for line, count in short_lines.most_common(10):
-            print(f"  {count:7,}  {line}")
-        print(f"random article: {sample['title']}\n{preview(sample['text'] or '')}")
+        print(f"\n{config.LANGUAGE_NAMES[lang]}")
+        print_row("articles", f"{n:,}")
+        print_row("characters", f"{sum(lengths) / 1e6:.1f}M ({size / 1e6:.1f} MB)")
+        print_row("article length", f"median {lengths[n // 2]:,} | p10 {lengths[n // 10]:,} | "
+                                    f"p90 {lengths[n * 9 // 10]:,} | max {lengths[-1]:,}")
+        print_row(f"under {config.MIN_CHARS} chars", f"{sum(x < config.MIN_CHARS for x in lengths):,} articles")
+        print_list("problems", (f"{count:>7,}  {name}" for name, count in problems.most_common()))
+        print_list("common lines", (f"{count:>7,}  {line}" for line, count in short_lines.most_common(10)))
+        print_row("random article", sample["title"])
+        print(indent(preview(sample["text"] or "")))
 
     total = sum(tokens.values())
-    print("\nestimated tokens: " + " | ".join(f"{lang} ~{t / 1e6:.1f}M ({t / total:.0%})" for lang, t in tokens.items()))
+    print("\nEstimated tokens")
+    for lang, t in tokens.items():
+        print_row(config.LANGUAGE_NAMES[lang], f"~{t / 1e6:.1f}M ({t / total:.0%})")

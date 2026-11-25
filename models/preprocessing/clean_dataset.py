@@ -67,6 +67,7 @@ def clean_file(in_path, out_path, lang, clean_row, counts, drop_duplicates=False
 
 # Step 1: light cleaning (normalization + basic) of raw/ into cleaned/. Returns what was removed and why.
 def run_light_cleaning():
+    print("\n### 2) Light cleaning: raw/ -> cleaned/")
     stats = {}
     for lang in config.LANGUAGES:
         counts = Counter()
@@ -74,13 +75,14 @@ def run_light_cleaning():
                                 lang, light_clean_row, counts)
         counts["raw"] = read
         stats[lang] = counts
-        print(f"{lang}: {read:,} raw -> {kept:,} after light cleaning")
+        print(f"  {config.LANGUAGE_NAMES[lang]:<9}{read:>9,} -> {kept:>9,} articles  ({kept / read:.1%} kept)")
     return stats
 
 
 # Step 2: heavy cleaning (structural) of cleaned/, then drop exact duplicates.
 # Takes the stats of step 1 and returns the full stats (used by the quality report).
 def run_heavy_cleaning(light_stats):
+    print("\n### 3) Heavy cleaning and duplicates: cleaned/")
     stats = {}
     for lang in config.LANGUAGES:
         counts = Counter(light_stats[lang])
@@ -90,5 +92,5 @@ def run_heavy_cleaning(light_stats):
         temp_path.replace(path)
         counts["cleaned"] = kept
         stats[lang] = dict(counts)
-        print(f"{lang}: {read:,} -> {kept:,} after heavy cleaning")
+        print(f"  {config.LANGUAGE_NAMES[lang]:<9}{read:>9,} -> {kept:>9,} articles  ({kept / read:.1%} kept)")
     return stats

@@ -8,6 +8,7 @@ CLEANED_DIR = DATASETS_DIR / "cleaned"  # cleaned + balanced ar/en
 SPLITS_DIR = DATASETS_DIR / "splits"    # train / val / test
 
 LANGUAGES = ["ar", "en"]
+LANGUAGE_NAMES = {"ar": "Arabic", "en": "English"}  # used in printed reports
 SEED = 42
 BATCH_SIZE = 2000  # articles in memory at a time, in every step
 

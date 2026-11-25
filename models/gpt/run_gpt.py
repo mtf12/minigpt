@@ -42,18 +42,19 @@ def main():
     model.eval()
 
     total, non_embedding = model.count_parameters()
-    print("\n### 10) GPT model")
-    print(f"device: {device}")
-    print(f"parameters: {total:,} total, {non_embedding:,} non-embedding, {total - non_embedding:,} embedding")
+    print("\n### 10) GPT model (untrained)")
+    print(f"  {'device:':<15}{device}")
+    print(f"  {'parameters:':<15}{total:,} total | {non_embedding:,} non-embedding | {total - non_embedding:,} embedding")
 
     ids, targets = read_batch(tokenizer, device)
     _, loss = model(ids, targets)
-    print(f"validation batch: {tuple(ids.shape)}, loss at init: {loss.item():.4f}")
+    print(f"  {'loss at init:':<15}{loss.item():.4f} on a validation batch of {tuple(ids.shape)}")
 
     for language, prompt in [("Arabic", "القاهرة هي عاصمة مصر"), ("English", "Cairo is the capital of")]:
         generated = model.generate(prompt_ids(tokenizer, prompt, device))
-        print(f"\n{language} prompt: {prompt}")
-        print(f"sample: {encode_text.decode(tokenizer, generated[0].tolist())}")
+        print(f"\n  {language}")
+        print(f"  {'prompt:':<15}{prompt}")
+        print(f"  {'sample:':<15}{encode_text.decode(tokenizer, generated[0].tolist())}")
 
 
 if __name__ == "__main__":

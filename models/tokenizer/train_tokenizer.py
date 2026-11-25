@@ -25,6 +25,7 @@ def train_on_texts(texts, vocab_size=config.VOCAB_SIZE, length=None):
         min_frequency=config.MIN_FREQUENCY,
         special_tokens=config.SPECIAL_TOKENS,
         initial_alphabet=pre_tokenizers.ByteLevel.alphabet(),  # all 256 bytes are always in the vocabulary
+        show_progress=False,  # its progress bars leave empty lines in the notebook
     )
     tokenizer.train_from_iterator(texts, trainer=trainer, length=length)
 
@@ -39,11 +40,15 @@ def train_on_texts(texts, vocab_size=config.VOCAB_SIZE, length=None):
 
 # Train on the train split and save to artifacts/tokenizer.json.
 def train(vocab_size=config.VOCAB_SIZE, out_path=config.TOKENIZER_PATH):
+    print("\n### 7) Training the tokenizer (about a minute)")
     n = pq.ParquetFile(config.TRAIN_PATH).metadata.num_rows
     texts = (article for article, _ in read_articles(config.TRAIN_PATH))
     tokenizer = train_on_texts(texts, vocab_size, length=n)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    before = out_path.read_bytes() if out_path.exists() else None
     tokenizer.save(str(out_path))
-    print(f"vocabulary: {tokenizer.get_vocab_size():,}, saved to {out_path}")
+    print(f"  {'vocabulary:':<17}{tokenizer.get_vocab_size():,} tokens")
+    print(f"  {'saved to:':<17}{out_path.relative_to(config.PROJECT_ROOT)}")
+    print(f"  {'same as before:':<17}{'yes' if out_path.read_bytes() == before else 'no, the tokenizer changed'}")
     return tokenizer

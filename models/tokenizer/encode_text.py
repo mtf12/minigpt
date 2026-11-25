@@ -26,8 +26,16 @@ def show_example(tokenizer, text):
     ids = encode(tokenizer, text)
     pieces = [tokenizer.decode([i], skip_special_tokens=False) for i in ids]
     decoded = decode(tokenizer, ids)
-    print(f"text:     {text}")
-    print(f"tokens:   {len(ids)} (with BOS / EOS), {len(text.split())} words")
-    print(f"pieces:   {' | '.join(pieces)}")
-    print(f"ids:      {ids}")
-    print(f"decoded:  {decoded}\n")
+    print(f"  text:     {text}")
+    print(f"  tokens:   {len(ids)} (with BOS / EOS), {len(text.split())} words")
+    print(f"  pieces:   {' | '.join(pieces)}")
+    print(f"  ids:      {ids}")
+    print(f"  decoded:  {decoded}\n")
+
+
+# Load the tokenizer and show a live example for every text.
+def show_examples(texts):
+    print("\n### 9) Encode a sentence into tokens, then decode it back\n")
+    tokenizer = load_tokenizer()
+    for text in texts:
+        show_example(tokenizer, text)
