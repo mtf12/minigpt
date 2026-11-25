@@ -3,6 +3,7 @@
 import hashlib
 import json
 import math
+import shutil
 import sys
 import time
 
@@ -144,9 +145,9 @@ def evaluate(run, tokens):
 # The run and its checkpoints
 # ---------------------------------------------------------------------------
 
-# Short fingerprint of tokenizer.json: a checkpoint must always continue with the tokenizer it was trained with.
-def tokenizer_fingerprint():
-    return hashlib.sha256(config.TOKENIZER_PATH.read_bytes()).hexdigest()[:16]
+# Short fingerprint of a tokenizer.json: a checkpoint must always be used with the tokenizer it was trained with.
+def tokenizer_fingerprint(path=None):
+    return hashlib.sha256((path or config.TOKENIZER_PATH).read_bytes()).hexdigest()[:16]
 
 
 # Everything a training run needs, and everything a checkpoint saves: model, optimizer, scaler and progress.
@@ -180,9 +181,13 @@ def save_checkpoint(path, run):
 
 # Save the last checkpoint and write the history next to it (history.json is what the loss curve is drawn from).
 # Both always describe the same update, so after a resume the history continues without gaps or repeats.
+# The tokenizer of the run is copied next to them once, so the checkpoints can always be used with the right one.
 def save_progress(run):
     save_checkpoint(config.LAST_CHECKPOINT_PATH, run)
     config.HISTORY_PATH.write_text(json.dumps(run["progress"]["history"], indent=1) + "\n", encoding="utf-8")
+    saved = config.SAVED_TOKENIZER_PATH
+    if not saved.exists() or tokenizer_fingerprint(saved) != run["progress"]["tokenizer"]:
+        shutil.copy2(config.TOKENIZER_PATH, saved)
 
 
 # Load a checkpoint into a run, so training continues at the exact next update.

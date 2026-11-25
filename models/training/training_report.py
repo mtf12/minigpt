@@ -1,5 +1,6 @@
 # After training: draw the loss curves from history.json and generate text with the best model.
 import json
+import sys
 
 import matplotlib.pyplot as plt
 import torch
@@ -8,6 +9,7 @@ import training_config as config
 import encode_text
 import gpt_model
 import run_gpt
+import train_model
 
 TRAIN_COLOR = "#2a78d6"  # blue, first series color (checked for color-blind readers together with the orange)
 VALIDATION_COLOR = "#eb6834"  # orange, second series color
@@ -44,7 +46,7 @@ def plot_history(path=config.HISTORY_PATH):
     plt.show()
 
 
-# Load the best model (lowest validation loss) and continue every prompt with it.
+# Load the best model (lowest validation loss) with the tokenizer it was trained with, and continue every prompt.
 def generate_samples(prompts):
     print("\n### 13) Text from the best model")
     device = gpt_model.select_device()
@@ -52,12 +54,15 @@ def generate_samples(prompts):
     model = gpt_model.GPTModel().to(device)
     model.load_state_dict(checkpoint["model"])
     model.eval()
-    epoch = checkpoint["progress"]["best_epoch"]
-    print(f"  {'model:':<10}epoch {epoch}, validation loss {checkpoint['progress']['best_val_loss']:.4f}")
+    progress = checkpoint["progress"]
+    if train_model.tokenizer_fingerprint(config.SAVED_TOKENIZER_PATH) != progress["tokenizer"]:
+        sys.exit(f"{config.SAVED_TOKENIZER_PATH} is not the tokenizer {config.BEST_MODEL_PATH.name} was trained with.")
+    print(f"  {'model:':<12}epoch {progress['best_epoch']}, validation loss {progress['best_val_loss']:.4f}")
+    print(f"  {'tokenizer:':<12}{config.SAVED_TOKENIZER_PATH} (the one the model was trained with)")
 
     torch.manual_seed(config.SEED)
-    tokenizer = encode_text.load_tokenizer()
+    tokenizer = encode_text.load_tokenizer(config.SAVED_TOKENIZER_PATH)
     for prompt in prompts:
         ids = model.generate(run_gpt.prompt_ids(tokenizer, prompt, device), max_new_tokens=config.SAMPLE_TOKENS)
-        print(f"\n  {'prompt:':<10}{prompt}")
-        print(f"  {'sample:':<10}{encode_text.decode(tokenizer, ids[0].tolist())}")
+        print(f"\n  {'prompt:':<12}{prompt}")
+        print(f"  {'sample:':<12}{encode_text.decode(tokenizer, ids[0].tolist())}")

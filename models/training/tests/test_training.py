@@ -30,6 +30,7 @@ def use_tiny_settings(folder):
     config.LAST_CHECKPOINT_PATH = folder / "last_checkpoint.pt"
     config.BEST_MODEL_PATH = folder / "best_model.pt"
     config.HISTORY_PATH = folder / "history.json"
+    config.SAVED_TOKENIZER_PATH = folder / "tokenizer.json"
 
 
 # A new run with a tiny GPT; the same seed always gives the same starting weights.
@@ -112,6 +113,8 @@ def run_checks():
               f"validation loss {history[0]['validation']['loss']:.3f} -> {history[1]['validation']['loss']:.3f}")
         check("[fit] the last checkpoint and the best model are saved",
               config.LAST_CHECKPOINT_PATH.exists() and config.BEST_MODEL_PATH.exists())
+        check("[fit] the tokenizer of the run is saved next to the checkpoints",
+              config.SAVED_TOKENIZER_PATH.read_bytes() == config.TOKENIZER_PATH.read_bytes())
         straight_history = json.loads(config.HISTORY_PATH.read_text())
         check("[fit] history.json has the loss of every update and every epoch",
               [u["step"] for u in straight_history["updates"]] == list(range(1, 9)) and len(straight_history["epochs"]) == 2,

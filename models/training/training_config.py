@@ -25,6 +25,7 @@ VAL_TOKENS_PATH = ARTIFACTS_DIR / "val_tokens.u16"
 LAST_CHECKPOINT_PATH = CHECKPOINTS_DIR / "last_checkpoint.pt"  # where training resumes from
 BEST_MODEL_PATH = CHECKPOINTS_DIR / "best_model.pt"  # the epoch with the lowest validation loss
 HISTORY_PATH = CHECKPOINTS_DIR / "history.json"  # train / validation loss of the whole run, kept across resumes
+SAVED_TOKENIZER_PATH = CHECKPOINTS_DIR / "tokenizer.json"  # the tokenizer the checkpoints were trained with
 
 # Data
 CONTEXT_LENGTH = gpt_config.CONTEXT_LENGTH  # every training window fills the whole model context

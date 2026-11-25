@@ -54,8 +54,8 @@ A bilingual (Arabic + English) GPT built from scratch. The project prepares 277,
   epoch) is saved every 15 minutes and after every epoch, through a temporary file so a dropped session never leaves
   a broken one. On Colab the checkpoints live on Google Drive, so a new session continues at the exact next update.
   A test checks that a resumed run ends with the same weights as a run that never stopped. The checkpoint also keeps
-  the loss of every update in `history.json`, so the loss curve covers the whole run across sessions, and it refuses
-  to resume with a different `tokenizer.json` than the one it was trained with. On CUDA the model trains in float16
+  the loss of every update in `history.json`, so the loss curve covers the whole run across sessions. The tokenizer
+  of the run is saved next to the checkpoints, and a checkpoint refuses to be used with any other `tokenizer.json`. On CUDA the model trains in float16
   mixed precision.
 
 ## Results
@@ -154,8 +154,13 @@ Upload these files once to Google Drive, keeping the folder names:
 
 Then open the notebook on Colab (File > Open notebook > GitHub, `mtf12/minigpt`, `models/data_pipeline.ipynb`),
 choose a GPU runtime and run all cells. The Setup cell clones the repository, installs the requirements, mounts Drive
-and copies the data. Checkpoints and `history.json` are saved to `My Drive/miniGPT/checkpoints/`.
+and copies the data. Checkpoints, `history.json` and the `tokenizer.json` they were trained with are saved to
+`My Drive/miniGPT/checkpoints/`.
 If the session drops, run the Setup cell and then the training cell again: training continues from the last checkpoint.
+
+To use the trained model locally, download `best_model.pt` and `tokenizer.json` from `My Drive/miniGPT/checkpoints/`
+into `models/training/artifacts/`, then run cell 13 (`training_report.generate_samples`). It always reads the
+tokenizer saved next to the model, not the one in `models/tokenizer/artifacts/`.
 
 To only train, without the notebook, run in a Colab cell:
 
